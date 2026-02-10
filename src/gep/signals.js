@@ -199,8 +199,15 @@ function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, user
     }
   }
 
-  // --- Force innovation after 3+ consecutive repairs ---
-  if (history.consecutiveRepairCount >= 3) {
+  // --- Force innovation when repair-heavy (ratio or consecutive) ---
+  // Count repair ratio in recent history: if >50% of last 8 are repair, force innovation
+  var repairRatio = 0;
+  if (history.recentIntents && history.recentIntents.length > 0) {
+    var repairCount = history.recentIntents.filter(function(i) { return i === 'repair'; }).length;
+    repairRatio = repairCount / history.recentIntents.length;
+  }
+  var shouldForceInnovation = history.consecutiveRepairCount >= 3 || repairRatio >= 0.5;
+  if (shouldForceInnovation) {
     // Remove repair-only signals (log_error, errsig) and inject innovation signals
     signals = signals.filter(function (s) {
       return s !== 'log_error' && !s.startsWith('errsig:') && !s.startsWith('recurring_errsig');
