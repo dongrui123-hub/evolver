@@ -16,14 +16,15 @@ const {
 const { selectGeneAndCapsule, matchPatternToSignals } = require('./gep/selector');
 const { buildGepPrompt } = require('./gep/prompt');
 const { extractCapabilityCandidates, renderCandidatesPreview } = require('./gep/candidates');
+const memoryAdapter = require('./gep/memoryGraphAdapter');
 const {
-  getMemoryAdvice,
+  getAdvice: getMemoryAdvice,
   recordSignalSnapshot,
   recordHypothesis,
   recordAttempt,
-  recordOutcomeFromState,
+  recordOutcome: recordOutcomeFromState,
   memoryGraphPath,
-} = require('./gep/memoryGraph');
+} = memoryAdapter;
 const { readStateForSolidify, writeStateForSolidify } = require('./gep/solidify');
 const { buildMutation, isHighRiskMutationAllowed } = require('./gep/mutation');
 const { selectPersonalityForRun } = require('./gep/personality');
