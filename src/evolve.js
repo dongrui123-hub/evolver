@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 const { getRepoRoot, getMemoryDir } = require('./gep/paths');
-const { extractSignals, analyzeRecentHistory } = require('./gep/signals');
+const { extractSignals } = require('./gep/signals');
 const {
   loadGenes,
   loadCapsules,
@@ -15,7 +15,6 @@ const {
 } = require('./gep/assetStore');
 const { selectGeneAndCapsule, matchPatternToSignals } = require('./gep/selector');
 const { buildGepPrompt } = require('./gep/prompt');
-const { resolveStrategy } = require('./gep/strategy');
 const { extractCapabilityCandidates, renderCandidatesPreview } = require('./gep/candidates');
 const {
   getMemoryAdvice,
@@ -292,38 +291,16 @@ function checkSystemHealth() {
 }
 
 function getMutationDirective(logContent) {
-  const strategy = resolveStrategy();
+  // Signal hints derived from recent logs.
   const errorMatches = logContent.match(/\[ERROR|Error:|Exception:|FAIL|Failed|"isError":true/gi) || [];
   const errorCount = errorMatches.length;
   const isUnstable = errorCount > 2;
-
-  // Strategy-aware intent recommendation
-  var recommendedIntent;
-  if (strategy.name === 'repair-only') {
-    recommendedIntent = 'repair';
-  } else if (strategy.name === 'innovate' && !isUnstable) {
-    recommendedIntent = 'innovate';
-  } else if (isUnstable && strategy.repair >= 0.3) {
-    recommendedIntent = 'repair';
-  } else if (isUnstable) {
-    recommendedIntent = 'optimize';
-  } else {
-    // Stable system: pick based on strategy weights (highest weight wins)
-    var weights = [
-      { intent: 'innovate', w: strategy.innovate },
-      { intent: 'optimize', w: strategy.optimize },
-      { intent: 'repair', w: strategy.repair },
-    ];
-    weights.sort(function(a, b) { return b.w - a.w; });
-    recommendedIntent = weights[0].intent;
-  }
+  const recommendedIntent = isUnstable ? 'repair' : 'optimize';
 
   return `
 [Signal Hints]
 - recent_error_count: ${errorCount}
 - stability: ${isUnstable ? 'unstable' : 'stable'}
-- strategy: ${strategy.label} (${strategy.name})
-- target_allocation: ${Math.round(strategy.innovate * 100)}% innovate / ${Math.round(strategy.optimize * 100)}% optimize / ${Math.round(strategy.repair * 100)}% repair
 - recommended_intent: ${recommendedIntent}
 `;
 }
@@ -641,6 +618,8 @@ async function run() {
     recordOutcomeFromState({ signals, observations });
   } catch (e) {
     // If we can't read/write memory graph, refuse to evolve (no "memoryless evolution").
+    console.error(`[MemoryGraph] Outcome write failed: ${e.message}`);
+    console.error(`[MemoryGraph] Refusing to evolve without causal memory. Target: ${memoryGraphPath()}`);
     throw new Error(`MemoryGraph Outcome write failed: ${e.message}`);
   }
 
@@ -648,6 +627,8 @@ async function run() {
   try {
     recordSignalSnapshot({ signals, observations });
   } catch (e) {
+    console.error(`[MemoryGraph] Signal snapshot write failed: ${e.message}`);
+    console.error(`[MemoryGraph] Refusing to evolve without causal memory. Target: ${memoryGraphPath()}`);
     throw new Error(`MemoryGraph Signal snapshot write failed: ${e.message}`);
   }
 
@@ -729,6 +710,8 @@ async function run() {
   try {
     memoryAdvice = getMemoryAdvice({ signals, genes, driftEnabled: IS_RANDOM_DRIFT });
   } catch (e) {
+    console.error(`[MemoryGraph] Read failed: ${e.message}`);
+    console.error(`[MemoryGraph] Refusing to evolve without causal memory. Target: ${memoryGraphPath()}`);
     throw new Error(`MemoryGraph Read failed: ${e.message}`);
   }
 
@@ -773,9 +756,7 @@ async function run() {
     Number(personalityState.creativity) >= 0.75 &&
     stableSuccess &&
     tailAvgScore >= 0.7;
-  const activeStrategy = resolveStrategy();
   const forceInnovation =
-    activeStrategy.name === 'innovate' ||
     String(process.env.FORCE_INNOVATION || process.env.EVOLVE_FORCE_INNOVATION || '').toLowerCase() === 'true';
   const mutationInnovateMode = !!IS_RANDOM_DRIFT || !!innovationPressure || !!forceInnovation;
   const mutationSignals = innovationPressure ? [...(Array.isArray(signals) ? signals : []), 'stable_success_plateau'] : signals;
@@ -818,7 +799,7 @@ async function run() {
   } catch (e) {
     console.error(`[MemoryGraph] Hypothesis write failed: ${e.message}`);
     console.error(`[MemoryGraph] Refusing to evolve without causal memory. Target: ${memoryGraphPath()}`);
-    process.exit(2);
+    throw new Error(`MemoryGraph Hypothesis write failed: ${e.message}`);
   }
 
   // Memory Graph: record the chosen causal path for this run. If this fails, refuse to output a mutation prompt.
@@ -838,7 +819,7 @@ async function run() {
   } catch (e) {
     console.error(`[MemoryGraph] Attempt write failed: ${e.message}`);
     console.error(`[MemoryGraph] Refusing to evolve without causal memory. Target: ${memoryGraphPath()}`);
-    process.exit(2);
+    throw new Error(`MemoryGraph Attempt write failed: ${e.message}`);
   }
 
   // Solidify state: capture minimal, auditable context for post-patch validation + asset write.
@@ -979,9 +960,6 @@ Mutation directive:
 ${mutationDirective}
 `.trim();
 
-  // Analyze recent history for innovation cooldown
-  const historyAnalysis = analyzeRecentHistory(recentEvents);
-
   const prompt = buildGepPrompt({
     nowIso: new Date().toISOString(),
     context,
@@ -994,7 +972,6 @@ ${mutationDirective}
     capsulesPreview,
     capabilityCandidatesPreview,
     externalCandidatesPreview,
-    recentInnovationTargets: historyAnalysis.recentInnovationTargets || {},
   });
 
   // Optional: emit a compact thought process block for wrappers (noise-controlled).
@@ -1009,7 +986,6 @@ ${mutationDirective}
       `selected_capsule: ${selectedCapsuleId ? String(selectedCapsuleId) : '(none)'}`,
       `mutation_category: ${mutation && mutation.category ? String(mutation.category) : '(none)'}`,
       `force_innovation: ${forceInnovation ? 'true' : 'false'}`,
-      `strategy: ${activeStrategy.label} (${activeStrategy.name})`,
     ].join('\n');
     console.log(`[THOUGHT_PROCESS]\n${thought}\n[/THOUGHT_PROCESS]`);
   }
@@ -1055,7 +1031,7 @@ ${mutationDirective}
       '',
       'Loop chaining (only if you are running in loop mode): after solidify succeeds, print a sessions_spawn call to start the next loop run with a short delay.',
       'Example:',
-      'sessions_spawn({ task: "exec: sleep 3 && node index.js --loop", agentId: "main", cleanup: "delete", label: "gep_loop_next" })',
+      'sessions_spawn({ task: "exec: node skills/feishu-evolver-wrapper/lifecycle.js ensure", agentId: "main", cleanup: "delete", label: "gep_loop_next" })',
       '',
       'GEP protocol prompt (may be truncated here; prefer the prompt file if provided):',
       clip(prompt, 24000),
