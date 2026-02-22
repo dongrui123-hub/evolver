@@ -15,6 +15,7 @@
     "LICENSE",
     "src/**",
     "scripts/*.js",
+    "test/*.test.js",
     ".gitignore"
   ],
   "exclude": [
@@ -23,7 +24,10 @@
     "docs/**",
     "memory/**",
     "dist-public/**",
-    "test/**",
+    "test/Dockerfile",
+    "test/fixtures/**",
+    "test/llm_helper.js",
+    "test/vibe_test.js",
     "docker-compose.test.yml",
     ".git/**"
   ],
@@ -33,6 +37,14 @@
         {
           "from": "This repo is a private staging area for the public repository.",
           "to": "This repository is the public distribution."
+        }
+      ]
+    },
+    "index.js": {
+      "replace": [
+        {
+          "from": "path.resolve(__dirname, '../../.env')",
+          "to": "path.resolve(__dirname, './.env')"
         }
       ]
     },
