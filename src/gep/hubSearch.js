@@ -2,8 +2,11 @@
 //
 // Flow: extractSignals() -> hubSearch(signals) -> if hit: reuse; if miss: normal evolve
 // Two modes: direct (skip local reasoning) | reference (inject into prompt as strong hint)
+//
+// Uses POST /a2a/fetch with signals field (protocol-native) instead of GET /a2a/assets/search.
+// This returns full payload (content, diff, strategy) in a single round-trip.
 
-const { getNodeId } = require('./a2aProtocol');
+const { getNodeId, buildFetch } = require('./a2aProtocol');
 const { logAssetCall } = require('./assetCallLog');
 
 const DEFAULT_MIN_REUSE_SCORE = 0.72;
@@ -49,7 +52,6 @@ function pickBestMatch(results, threshold) {
   let bestScore = 0;
 
   for (const asset of results) {
-    // Only consider promoted assets
     if (asset.status && asset.status !== 'promoted') continue;
     const s = scoreHubResult(asset);
     if (s > bestScore) {
@@ -68,7 +70,9 @@ function pickBestMatch(results, threshold) {
 }
 
 /**
- * Search the hub for reusable capsules matching the given signals.
+ * Search the hub for reusable assets matching the given signals.
+ * Uses POST /a2a/fetch with signals (protocol-native, returns full payload).
+ * Falls back to GET /a2a/assets/search if fetch fails.
  * Returns { hit: true, match, score, mode } or { hit: false }.
  */
 async function hubSearch(signals, opts) {
@@ -81,29 +85,23 @@ async function hubSearch(signals, opts) {
   if (signalList.length === 0) return { hit: false, reason: 'no_signals' };
 
   const threshold = (opts && Number.isFinite(opts.threshold)) ? opts.threshold : getMinReuseScore();
-  const limit = (opts && Number.isFinite(opts.limit)) ? opts.limit : 5;
   const timeout = (opts && Number.isFinite(opts.timeoutMs)) ? opts.timeoutMs : 8000;
 
   try {
-    const params = new URLSearchParams();
-    const sanitizedSignals = signalList.map(s => s.replace(/,/g, ' '));
-    params.set('signals', sanitizedSignals.join(','));
-    params.set('status', 'promoted');
-    params.set('limit', String(limit));
-    const nodeId = getNodeId();
-    if (nodeId) params.set('node_id', nodeId);
+    const fetchMsg = buildFetch({ signals: signalList });
+    const endpoint = hubUrl + '/a2a/fetch';
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(TIMEOUT_REASON), timeout);
 
-    const headers = { 'Accept': 'application/json' };
+    const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
     const token = process.env.A2A_HUB_TOKEN;
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const url = `${hubUrl}/a2a/assets/search?${params.toString()}`;
-    const res = await fetch(url, {
-      method: 'GET',
+    const res = await fetch(endpoint, {
+      method: 'POST',
       headers,
+      body: JSON.stringify(fetchMsg),
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -114,47 +112,53 @@ async function hubSearch(signals, opts) {
         action: 'hub_search_miss',
         signals: signalList,
         reason: `hub_http_${res.status}`,
+        via: 'fetch_with_signals',
       });
       return { hit: false, reason: `hub_http_${res.status}` };
     }
 
     const data = await res.json();
-    const assets = Array.isArray(data.assets) ? data.assets : [];
+    const results = (data && data.payload && Array.isArray(data.payload.results))
+      ? data.payload.results
+      : [];
 
-    if (assets.length === 0) {
+    if (results.length === 0) {
       logAssetCall({
         run_id: (opts && opts.run_id) || null,
         action: 'hub_search_miss',
         signals: signalList,
         reason: 'no_results',
+        via: 'fetch_with_signals',
       });
       return { hit: false, reason: 'no_results' };
     }
 
-    const pick = pickBestMatch(assets, threshold);
+    const pick = pickBestMatch(results, threshold);
     if (!pick) {
       logAssetCall({
         run_id: (opts && opts.run_id) || null,
         action: 'hub_search_miss',
         signals: signalList,
         reason: 'below_threshold',
-        extra: { candidates: assets.length, threshold },
+        extra: { candidates: results.length, threshold },
+        via: 'fetch_with_signals',
       });
-      return { hit: false, reason: 'below_threshold', candidates: assets.length };
+      return { hit: false, reason: 'below_threshold', candidates: results.length };
     }
 
-    console.log(`[HubSearch] Hit: ${pick.match.asset_id || 'unknown'} (score=${pick.score}, mode=${pick.mode})`);
+    console.log(`[HubSearch] Hit via fetch+signals: ${pick.match.asset_id || 'unknown'} (score=${pick.score}, mode=${pick.mode})`);
 
     logAssetCall({
       run_id: (opts && opts.run_id) || null,
       action: 'hub_search_hit',
       asset_id: pick.match.asset_id || null,
-      asset_type: pick.match.type || null,
+      asset_type: pick.match.asset_type || pick.match.type || null,
       source_node_id: pick.match.source_node_id || null,
       chain_id: pick.match.chain_id || null,
       score: pick.score,
       mode: pick.mode,
       signals: signalList,
+      via: 'fetch_with_signals',
     });
 
     return {
@@ -176,6 +180,7 @@ async function hubSearch(signals, opts) {
       signals: signalList,
       reason,
       extra: { error: err.message },
+      via: 'fetch_with_signals',
     });
     return { hit: false, reason, error: err.message };
   }
