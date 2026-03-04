@@ -1,6 +1,6 @@
 {
   "name": "evolver",
-  "version": "1.23.0",
+  "version": "1.24.0",
   "description": "A GEP-powered self-evolution engine for AI agents. Features automated log analysis and Genome Evolution Protocol (GEP) for auditable, reusable evolution assets.",
   "main": "index.js",
   "keywords": [
@@ -18,6 +18,7 @@
     "start": "node index.js",
     "run": "node index.js run",
     "solidify": "node index.js solidify",
+    "review": "node index.js review",
     "distill": "node index.js distill",
     "test": "node --test test/*.test.js",
     "a2a:export": "node scripts/a2a_export.js",
