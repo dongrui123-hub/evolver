@@ -16,7 +16,8 @@
     "src/**",
     "scripts/*.js",
     "test/*.test.js",
-    ".gitignore"
+    ".gitignore",
+    ".npmignore"
   ],
   "exclude": [
     "assets/gep/candidates.jsonl",
@@ -32,6 +33,14 @@
     ".git/**"
   ],
   "rewrite": {
+    "package.json": {
+      "replace": [
+        {
+          "from": "\"name\": \"evolver\"",
+          "to": "\"name\": \"@evomap/evolver\""
+        }
+      ]
+    },
     "README.md": {
       "replace": [
         {

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const evolve = require('./src/evolve');
 const { solidify } = require('./src/gep/solidify');
 const path = require('path');
