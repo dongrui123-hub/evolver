@@ -10,7 +10,7 @@ var { getHubUrl, buildHubHeaders, getNodeId } = require('./a2aProtocol');
  */
 function sanitizeSkillName(rawName) {
   var name = rawName.replace(/^gene_distilled_/, '').replace(/^gene_/, '').replace(/_/g, '-');
-  if (/^\d{8,}/.test(name) || /^(cursor|vscode|vim|emacs|windsurf|copilot|cline|codex)[-]?\d+$/i.test(name)) {
+  if (/^\d{8,}/.test(name) || /^(cursor|vscode|vim|emacs|windsurf|copilot|cline|codex)[-]?\d*$/i.test(name)) {
     return null;
   }
   name = name.replace(/-?\d{10,}$/g, '').replace(/-+$/, '');
@@ -35,6 +35,8 @@ function geneToSkillMd(gene) {
         if (w.length >= 3 && fallbackWords.length < 5) fallbackWords.push(w);
       });
     }
+    var seen = {};
+    fallbackWords = fallbackWords.filter(function (w) { if (seen[w]) return false; seen[w] = true; return true; });
     name = fallbackWords.length >= 2 ? fallbackWords.join('-') : 'auto-distilled-skill';
   }
   var desc = gene.summary || 'AI agent skill distilled from evolution experience.';

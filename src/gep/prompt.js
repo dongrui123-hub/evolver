@@ -134,7 +134,7 @@ ENSURE VALID JSON SYNTAX (escape quotes in strings).
 
 3. Gene (The Knowledge)
    - Reuse/update existing ID if possible. Create new only if novel pattern.
-   - ID MUST be descriptive kebab-case: gene_<descriptive-name> (e.g., gene_retry_on_timeout)
+   - ID MUST be descriptive: gene_<descriptive_name> (e.g., gene_retry_on_timeout)
    - NEVER use timestamps, random numbers, or tool names (cursor, vscode, etc.) in IDs
    - summary MUST be a clear human-readable sentence describing what the Gene does
    {

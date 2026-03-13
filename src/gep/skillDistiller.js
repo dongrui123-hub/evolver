@@ -317,10 +317,9 @@ function validateSynthesizedGene(gene, existingGenes) {
 
   if (gene.id) {
     var suffix = String(gene.id).replace(DISTILLED_ID_PREFIX, '');
-    if (/^\d+$/.test(suffix) || /^\d{10,}/.test(suffix)) {
-      gene.id = deriveDescriptiveId(gene);
-    }
-    if (/^(cursor|vscode|vim|emacs|windsurf|copilot|cline|codex)[-_]?\d*/i.test(suffix)) {
+    var needsRename = /^\d+$/.test(suffix) || /^\d{10,}/.test(suffix)
+      || /^(cursor|vscode|vim|emacs|windsurf|copilot|cline|codex)[-_]?\d*/i.test(suffix);
+    if (needsRename) {
       gene.id = deriveDescriptiveId(gene);
     }
     var cleanSuffix = String(gene.id).replace(DISTILLED_ID_PREFIX, '');
