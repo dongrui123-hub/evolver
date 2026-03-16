@@ -454,7 +454,9 @@ async function main() {
           const s = readJsonSafe(sp);
           if (s && s.last_run) {
             s.last_solidify = { run_id: s.last_run.run_id, rejected: true, timestamp: new Date().toISOString() };
-            fs.writeFileSync(sp, JSON.stringify(s, null, 2));
+            const tmpReject = `${sp}.tmp`;
+            fs.writeFileSync(tmpReject, JSON.stringify(s, null, 2) + '\n', 'utf8');
+            fs.renameSync(tmpReject, sp);
           }
         }
         console.log('[Review] Changes rolled back.');
