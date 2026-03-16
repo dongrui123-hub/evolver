@@ -468,12 +468,22 @@ async function main() {
     }
 
   } else if (command === 'fetch') {
-    const skillFlag = args.find(a => typeof a === 'string' && (a.startsWith('--skill=') || a.startsWith('-s=')));
-    const skillPositional = skillFlag ? null : args[1];
-    const shortFlag = args.indexOf('-s');
-    const skillId = skillFlag
-      ? skillFlag.split('=')[1]
-      : (shortFlag !== -1 && args[shortFlag + 1] ? args[shortFlag + 1] : skillPositional);
+    let skillId = null;
+    const eqFlag = args.find(a => typeof a === 'string' && (a.startsWith('--skill=') || a.startsWith('-s=')));
+    if (eqFlag) {
+      skillId = eqFlag.split('=').slice(1).join('=');
+    } else {
+      const sIdx = args.indexOf('-s');
+      const longIdx = args.indexOf('--skill');
+      const flagIdx = sIdx !== -1 ? sIdx : longIdx;
+      if (flagIdx !== -1 && args[flagIdx + 1] && !String(args[flagIdx + 1]).startsWith('-')) {
+        skillId = args[flagIdx + 1];
+      }
+    }
+    if (!skillId) {
+      const positional = args[1];
+      if (positional && !String(positional).startsWith('-')) skillId = positional;
+    }
 
     if (!skillId) {
       console.error('Usage: evolver fetch --skill <skill_id>');
@@ -487,7 +497,7 @@ async function main() {
     if (!hubUrl) {
       console.error('[fetch] A2A_HUB_URL is not configured.');
       console.error('Set it via environment variable or .env file:');
-      console.error('  export A2A_HUB_URL=https://hub.evomap.ai');
+      console.error('  export A2A_HUB_URL=https://evomap.ai');
       process.exit(1);
     }
 
@@ -526,9 +536,11 @@ async function main() {
       }
 
       const data = await resp.json();
-      const outDir = args.find(a => typeof a === 'string' && a.startsWith('--out='))
-        ? args.find(a => a.startsWith('--out=')).slice('--out='.length)
-        : path.join('.', 'skills', data.skill_id || skillId);
+      const outFlag = args.find(a => typeof a === 'string' && a.startsWith('--out='));
+      const safeId = String(data.skill_id || skillId).replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+      const outDir = outFlag
+        ? outFlag.slice('--out='.length)
+        : path.join('.', 'skills', safeId);
 
       if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
