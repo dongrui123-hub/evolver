@@ -24,6 +24,11 @@ function readJsonSafe(p) {
   }
 }
 
+/**
+ * Mark a pending evolution run as rejected (state-only, no git rollback).
+ * @param {string} statePath - Path to evolution_solidify_state.json
+ * @returns {boolean} true if a pending run was found and rejected
+ */
 function rejectPendingRun(statePath) {
   try {
     const state = readJsonSafe(statePath);
