@@ -14,5 +14,6 @@ test/tmp/
 
 # Local identity persistence (device + node)
 .evomap_device_id
-.evomap_node_id.clawhub/
+.evomap_node_id
+.clawhub/
 skills/
