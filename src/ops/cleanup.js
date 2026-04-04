@@ -56,7 +56,7 @@ function run() {
             })
             .sort(function(a, b) { return b.mtime - a.mtime; }); // newest first
 
-        var MAX_FILES = 10;
+        var MAX_FILES = require('../config').CLEANUP_MAX_FILES;
         if (remainingFiles.length > MAX_FILES) {
             var toDelete = remainingFiles.slice(MAX_FILES).map(function(f) { return f.path; });
             deleted += safeBatchDelete(toDelete);

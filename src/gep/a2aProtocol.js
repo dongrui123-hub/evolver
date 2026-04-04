@@ -428,7 +428,7 @@ let _latestHubEvents = [];
 let _pollInflight = false;
 let _cachedHubNodeSecret = null;
 let _cachedHubNodeSecretAt = 0;
-const _SECRET_CACHE_TTL_MS = 60000;
+const _SECRET_CACHE_TTL_MS = require('../config').SECRET_CACHE_TTL_MS;
 let _heartbeatIntervalMs = 0;
 let _heartbeatRunning = false;
 
@@ -788,7 +788,7 @@ function queueCommitmentUpdate(taskId, deadlineIso, isAssignment) {
 
 function startHeartbeat(intervalMs) {
   if (_heartbeatRunning) return;
-  _heartbeatIntervalMs = intervalMs || Number(process.env.HEARTBEAT_INTERVAL_MS) || 360000; // default 6min
+  _heartbeatIntervalMs = intervalMs || require('../config').HEARTBEAT_INTERVAL_MS;
   _heartbeatStartedAt = Date.now();
   _heartbeatRunning = true;
 
@@ -800,7 +800,7 @@ function startHeartbeat(intervalMs) {
   }).then(function () {
     if (!_heartbeatRunning) return;
     // First heartbeat after hello completes, with enough gap to avoid rate limit
-    _scheduleNextHeartbeat(Math.max(30000, _heartbeatIntervalMs));
+    _scheduleNextHeartbeat(Math.max(require('../config').HEARTBEAT_FIRST_DELAY_MS, _heartbeatIntervalMs));
   });
 }
 

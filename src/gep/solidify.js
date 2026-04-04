@@ -934,8 +934,8 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
       capsule.a2a = {
         eligible_to_broadcast:
           isBlastRadiusSafe(capsule.blast_radius) &&
-          (capsule.outcome.score || 0) >= 0.7 &&
-          (capsule.success_streak || 0) >= 2,
+          (capsule.outcome.score || 0) >= require('../config').BROADCAST_SCORE_THRESHOLD &&
+          (capsule.success_streak || 0) >= require('../config').BROADCAST_SUCCESS_STREAK,
       };
       capsule.asset_id = computeAssetId(capsule);
       upsertCapsule(capsule);
@@ -1126,7 +1126,7 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
       try {
         const { buildPublishBundle: buildApBundle, httpTransportSend: httpApSend } = require('./a2aProtocol');
         const { sanitizePayload: sanitizeAp, fullLeakCheck: fullLeakCheckAp } = require('./sanitize');
-        const apLeakMode = (process.env.EVOLVER_LEAK_CHECK || 'warn').toLowerCase();
+        const apLeakMode = require('../config').LEAK_CHECK_MODE;
         if (apLeakMode !== 'off') {
           const apContent = JSON.stringify(geneUsed || {}) + JSON.stringify(constraintCheck || {});
           const apLeakResult = fullLeakCheckAp(apContent);
