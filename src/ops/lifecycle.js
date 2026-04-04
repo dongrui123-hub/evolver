@@ -10,7 +10,7 @@ const { getRepoRoot, getWorkspaceRoot, getEvolverLogPath } = require('../gep/pat
 var WORKSPACE_ROOT = getWorkspaceRoot();
 var LOG_FILE = getEvolverLogPath();
 var PID_FILE = path.join(WORKSPACE_ROOT, 'memory', 'evolver_loop.pid');
-var MAX_SILENCE_MS = 30 * 60 * 1000;
+var MAX_SILENCE_MS = require('../config').MAX_SILENCE_MS;
 
 function getLoopScript() {
     // Prefer wrapper if exists, fallback to core evolver

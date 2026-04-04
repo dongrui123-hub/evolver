@@ -24,7 +24,7 @@ function getDiskUsage(mount) {
             freeMb: Math.round(parseInt(out[1], 10) / 1024) // df returns 1k blocks usually
         };
     } catch (e) {
-        return { pct: 0, freeMb: 999999, error: e.message };
+        return { pct: -1, freeMb: -1, error: e.message };
     }
 }
 
@@ -55,7 +55,10 @@ function runHealthCheck() {
 
     // 2. Disk Space Check
     const disk = getDiskUsage('/');
-    if (disk.pct > 90) {
+    if (disk.error) {
+        checks.push({ name: 'disk_space', ok: false, status: 'check failed: ' + disk.error, severity: 'warning' });
+        warnings++;
+    } else if (disk.pct > 90) {
         checks.push({ name: 'disk_space', ok: false, status: `${disk.pct}% used`, severity: 'critical' });
         criticalErrors++;
     } else if (disk.pct > 80) {
