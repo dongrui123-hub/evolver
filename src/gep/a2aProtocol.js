@@ -852,6 +852,210 @@ function registerTransport(name, impl) {
   transports[name] = impl;
 }
 
+// --- Hub Infrastructure Helpers ---
+// These wrap the agent infrastructure endpoints added to evomap-hub,
+// enabling evolver instances to self-provision, transfer credits,
+// manage identity, and query audit logs programmatically.
+
+function _hubPost(pathSuffix, body, timeoutMs) {
+  var hubUrl = getHubUrl();
+  if (!hubUrl) return Promise.resolve({ ok: false, error: 'no_hub_url' });
+  var endpoint = hubUrl.replace(/\/+$/, '') + pathSuffix;
+  var timeout = timeoutMs || require('../config').HTTP_TRANSPORT_TIMEOUT_MS;
+  return fetch(endpoint, {
+    method: 'POST',
+    headers: buildHubHeaders(),
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeout),
+  })
+    .then(function (res) {
+      if (!res.ok) return res.text().then(function (t) { return { ok: false, status: res.status, error: t.slice(0, 400) }; });
+      return res.json().then(function (data) { return { ok: true, data: data }; });
+    })
+    .catch(function (err) { return { ok: false, error: err.message }; });
+}
+
+function _hubGet(pathSuffix, timeoutMs) {
+  var hubUrl = getHubUrl();
+  if (!hubUrl) return Promise.resolve({ ok: false, error: 'no_hub_url' });
+  var endpoint = hubUrl.replace(/\/+$/, '') + pathSuffix;
+  var timeout = timeoutMs || require('../config').HTTP_TRANSPORT_TIMEOUT_MS;
+  return fetch(endpoint, {
+    method: 'GET',
+    headers: buildHubHeaders(),
+    signal: AbortSignal.timeout(timeout),
+  })
+    .then(function (res) {
+      if (!res.ok) return res.text().then(function (t) { return { ok: false, status: res.status, error: t.slice(0, 400) }; });
+      return res.json().then(function (data) { return { ok: true, data: data }; });
+    })
+    .catch(function (err) { return { ok: false, error: err.message }; });
+}
+
+/**
+ * Self-provision a machine account on the hub.
+ * POST /a2a/provision
+ */
+function hubSelfProvision(opts) {
+  var nodeId = (opts && opts.nodeId) || getNodeId();
+  return _hubPost('/a2a/provision', {
+    node_id: nodeId,
+    sender_id: nodeId,
+    label: (opts && opts.label) || undefined,
+    description: (opts && opts.description) || undefined,
+  });
+}
+
+/**
+ * Programmatically top up credits on the hub.
+ * POST /a2a/credit/topup
+ */
+function hubCreditTopUp(amount, opts) {
+  var nodeId = (opts && opts.nodeId) || getNodeId();
+  var safeAmount = Math.max(0, Number(amount) || 0);
+  return _hubPost('/a2a/credit/topup', {
+    node_id: nodeId,
+    sender_id: nodeId,
+    amount: safeAmount,
+    idempotency_key: (opts && opts.idempotencyKey) || undefined,
+  });
+}
+
+/**
+ * Transfer credits to another agent on the hub.
+ * POST /a2a/credit/transfer
+ */
+function hubCreditTransfer(toNodeId, amount, opts) {
+  var fromNodeId = (opts && opts.fromNodeId) || getNodeId();
+  var safeAmount = Math.max(0, Number(amount) || 0);
+  return _hubPost('/a2a/credit/transfer', {
+    from_node_id: fromNodeId,
+    sender_id: fromNodeId,
+    to_node_id: toNodeId,
+    amount: safeAmount,
+    reason: (opts && opts.reason) || 'agent_transfer',
+    reference_id: (opts && opts.referenceId) || undefined,
+    meta: (opts && opts.meta) || undefined,
+  });
+}
+
+/**
+ * Get transfer fee estimate.
+ * GET /a2a/credit/transfer/estimate?amount=N
+ */
+function hubTransferEstimate(amount) {
+  return _hubGet('/a2a/credit/transfer/estimate?amount=' + (Number(amount) || 0));
+}
+
+/**
+ * Get own transfer history.
+ * GET /a2a/credit/transfer/history?node_id=...
+ */
+function hubTransferHistory(opts) {
+  var nodeId = (opts && opts.nodeId) || getNodeId();
+  var limit = (opts && opts.limit) || 20;
+  var offset = (opts && opts.offset) || 0;
+  var dir = (opts && opts.direction) || '';
+  var qs = 'node_id=' + encodeURIComponent(nodeId) + '&limit=' + limit + '&offset=' + offset;
+  if (dir) qs += '&direction=' + encodeURIComponent(dir);
+  return _hubGet('/a2a/credit/transfer/history?' + qs);
+}
+
+/**
+ * Get portable identity profile of any node.
+ * GET /a2a/identity/:nodeId
+ */
+function hubGetIdentity(nodeId) {
+  var nid = nodeId || getNodeId();
+  return _hubGet('/a2a/identity/' + encodeURIComponent(nid));
+}
+
+/**
+ * Get a verifiable reputation attestation.
+ * GET /a2a/identity/:nodeId/attestation
+ */
+function hubGetAttestation(nodeId) {
+  var nid = nodeId || getNodeId();
+  return _hubGet('/a2a/identity/' + encodeURIComponent(nid) + '/attestation');
+}
+
+/**
+ * Verify a reputation attestation.
+ * POST /a2a/identity/verify
+ */
+function hubVerifyAttestation(attestation) {
+  return _hubPost('/a2a/identity/verify', attestation);
+}
+
+/**
+ * Set a DID document for the current node.
+ * POST /a2a/identity/did
+ */
+function hubSetDid(didDocument, didMethod) {
+  var nodeId = getNodeId();
+  return _hubPost('/a2a/identity/did', {
+    node_id: nodeId,
+    sender_id: nodeId,
+    did_document: didDocument,
+    did_method: didMethod || 'did:evomap',
+  });
+}
+
+/**
+ * Get own audit logs.
+ * GET /a2a/audit/:nodeId
+ */
+function hubGetAuditLogs(opts) {
+  var nodeId = (opts && opts.nodeId) || getNodeId();
+  var limit = (opts && opts.limit) || 50;
+  var offset = (opts && opts.offset) || 0;
+  var qs = '?limit=' + limit + '&offset=' + offset;
+  if (opts && opts.action) qs += '&action=' + encodeURIComponent(opts.action);
+  if (opts && opts.since) qs += '&since=' + encodeURIComponent(opts.since);
+  if (opts && opts.until) qs += '&until=' + encodeURIComponent(opts.until);
+  return _hubGet('/a2a/audit/' + encodeURIComponent(nodeId) + qs);
+}
+
+/**
+ * Get a generated work report.
+ * GET /a2a/audit/:nodeId/report
+ */
+function hubGetWorkReport(opts) {
+  var nodeId = (opts && opts.nodeId) || getNodeId();
+  var days = (opts && opts.days) || 7;
+  return _hubGet('/a2a/audit/' + encodeURIComponent(nodeId) + '/report?days=' + days);
+}
+
+/**
+ * Open a Server-Sent Events stream for real-time hub notifications.
+ * Returns an object with { ok, eventSource, close() } on success.
+ * The caller should attach event listeners to eventSource.
+ * GET /a2a/events/stream?node_id=...
+ */
+function hubOpenEventStream(opts) {
+  var hubUrl = getHubUrl();
+  if (!hubUrl) return { ok: false, error: 'no_hub_url' };
+
+  var nodeId = (opts && opts.nodeId) || getNodeId();
+  var durationMs = (opts && opts.durationMs) || 300000;
+  var qs = 'node_id=' + encodeURIComponent(nodeId) + '&duration_ms=' + durationMs;
+  var secret = getHubNodeSecret();
+  if (secret) qs += '&node_secret=' + encodeURIComponent(secret);
+  var endpoint = hubUrl.replace(/\/+$/, '') + '/a2a/events/stream?' + qs;
+
+  try {
+    var EventSource = require('eventsource');
+    var es = new EventSource(endpoint);
+    return {
+      ok: true,
+      eventSource: es,
+      close: function () { es.close(); },
+    };
+  } catch (err) {
+    return { ok: false, error: 'eventsource_not_available: ' + (err.message || err) };
+  }
+}
+
 module.exports = {
   PROTOCOL_NAME,
   PROTOCOL_VERSION,
@@ -893,4 +1097,16 @@ module.exports = {
   getCapabilityGaps,
   getHubEvents,
   consumeHubEvents,
+  hubSelfProvision,
+  hubCreditTopUp,
+  hubCreditTransfer,
+  hubTransferEstimate,
+  hubTransferHistory,
+  hubGetIdentity,
+  hubGetAttestation,
+  hubVerifyAttestation,
+  hubSetDid,
+  hubGetAuditLogs,
+  hubGetWorkReport,
+  hubOpenEventStream,
 };
